@@ -1,0 +1,31 @@
+\newpage\pagestyle{introduction}
+
+\unnumberedchapter{Introduzione}
+
+\section*{Il contesto dell'Intelligenza Artificiale Generativa}
+
+Negli ultimi anni, il campo dell'Intelligenza Artificiale ha assistito a una trasformazione radicale grazie all'avvento dei \textit{Large Language Models} (LLM). Questi modelli hanno dimostrato capacità senza precedenti nella comprensione e nella generazione del linguaggio naturale, rivoluzionando l'interazione uomo-macchina. Tuttavia, nonostante le straordinarie performance, i modelli linguistici pre-addestrati presentano limitazioni intrinseche che ne condizionano l'affidabilità in contesti professionali e scientifici.
+
+Uno dei limiti più rilevanti è il "taglio temporale" della conoscenza (\textit{knowledge cutoff}). Un LLM possiede informazioni aggiornate solo fino al momento in cui si è concluso il suo addestramento, quindi se viene posta una domanda su argomenti successivi al periodo di addestramento, il modello non ha accesso alle informazioni più recenti per poter rispondere in modo accurato. Un altro limite è dato dalle "allucinazioni", ovvero la generazione di risposte sintatticamente corrette ma fattualmente errate o prive di fondamento. In domini critici, come quello medico, tali limiti rappresentano un rischio significativo per l'affidabilità.
+
+\section*{L'approccio Retrieval-Augmented Generation (RAG)}
+
+Per superare queste criticità, è stato adottato il paradigma del \textit{Retrieval-Augmented Generation} (RAG). L'idea alla base del RAG è quella di separare la capacità linguistica di un LLM dalla sua conoscenza. Questo viene realizzato fornendo al modello una base di conoscenza esterna, che viene interrogata in tempo reale per recuperare le informazioni necessarie a rispondere alle domande dell'utente. In questo modo, viene eliminato il problema del knowledge cutoff fornendo al modello accesso a dati aggiornati, e si riduce drasticamente il rischio di allucinazioni, poiché le risposte sono basate su fonti verificabili.
+
+Per attuare il processo RAG, vengono eseguite le operazioni di \textbf{Retrieve}, \textbf{Augment} e \textbf{Generate} che in sequenza permettono di recuperare i documenti rilevanti, arricchire il prompt con tali informazioni e generare una risposta accurata.
+
+\section*{L'importanza dei Graph-Vector Database nel supporto all'IA}
+
+Solitamente in un'architettura RAG, la base di conoscenza è costituita da un database di tipo vettoriale, il quale consente di effettuare ricerche per similarità semantica tra le domande dell'utente e i documenti presenti nel database stesso. Nel lavoro svolto in questa tesi si è scelto di adottare un approccio ibrido, integrando la ricerca per similarità vettoriale con una rappresentazione a grafo dei documenti. In questo modo è possibile sfruttare la struttura fornita dal grafo per navigare i documenti stessi. Questo viene utilizzato per recuperare non solo sigole porzioni di testo, ma anche una finestra di contensto più ampia, in modo da ridurre ulteriormente il rischio di allucinazioni e migliorare la coerenza delle risposte generate.
+
+Nel caso specifico di questa tesi, la fonte di verità è rappresentata da una serie di documenti scientifici riguardanti l'epilessia in campo medico. Questi documenti sono stati organizzati in un database a grafo in modo da separare gli stessi in vari paragrafi. Questo è stato fatto per non fornire il documento intero al modello, che ricevendo un documento troppo lungo potrebbe non essere in grado di processarlo correttamente, e quindi fornire risposte errate. In questo modo, invece, è possibile fornire al modello solo i paragrafi più rilevanti per rispondere alla domanda, migliorando così l'accuratezza e la coerenza delle risposte generate.
+
+\section*{Sistemi Distribuiti e Strategie di Ottimizzazione}
+
+Utilizzare un database centralizzato di larga scala per supportare un sistema RAG comporta vari problemi. In primo luogo, la latenza tra la richiesta dell'utente e la risposta del sistema. In un contesto di un applicazione di Conversational AI è fondamentale la reattività del sistema, questo per fornire un'esperienza fluida e naturale all'utente. Se il database ha dimensioni importanti, la ricerca e il recupero dei documenti possono richiedere tempi significativi, compromettendo l'efficacia dell'interazione. In secondo luogo se il database è centralizzato, potrebbe diventare un collo di bottiglia nel caso ci sia un elevato numero di utenti che accedono contemporaneamente al sistema.
+
+In questo lavoro di tesi è stata adottata la strategia dello \textbf{sharding}. Questa tecnica consiste nel creare una sorta di "copia" delle poche informazioni rilevanti per rispondere alla domanda in un database locale, che funge da cache. Questo ci permette non solo di ridurre interazioni con il database remoto, ma anche di avvicinare i dati alla macchina che esegue il modello, riducendo così i costi di latenza e migliorando le performance complessive del sistema. Questa tecnica ci consente anche di avere una maggiore scalabilità orizzontale, poiché ogni istanza del sistema può gestire il proprio shard locale, riducendo la dipendenza da un database centralizzato e riducendo la possibilità di picchi di traffico verso il database centrale.
+
+\section*{Obiettivi della tesi}
+
+L'obiettivo di questo lavoro è sviluppare un sistema di assistenza virtuale basato su RAG, integrado la tecnica dello sharding per ottimizzare le performance del sistema. Si vuole dimostrare inoltre che il livello computazionale aggiuntivo introdotto dalla tecnica dello sharding è compensato da un miglioramento significativo delle performance. Nei capitoli successivi verrà presentato un approfondimento sullo sviluppo del sistema, seguito da una valutazione quantitativa delle performance ottenute, per poi concludere con una discussione sui risultati e sulle possibili evoluzioni future della ricerca.

@@ -1,0 +1,178 @@
+\newpage\pagestyle{main}
+
+\chapter{Valutazione Sperimentale e Analisi delle Performance}\label{chap:fifth}
+
+\inlineminitoc
+
+\section{Setup dei test e Metodologia}
+
+La valutazione di un sistema di \textit{Conversational AI} basato su RAG distribuito richiede un'analisi multidimensionale. Non è sufficiente che la risposta sia corretta; essa deve essere fornita in un tempo compatibile con le dinamiche della conversazione umana. In letteratura, il limite superiore per una conversazione percepita come fluida e naturale è identificato intorno ai 2 secondi di latenza complessiva \cite{latency_eca}: superare questa soglia introduce una frattura nel ritmo dialogico che degrada l'esperienza utente indipendentemente dalla qualità del contenuto della risposta.
+
+Per questo motivo, la sperimentazione si è concentrata sulla misurazione della latenza end-to-end e sulla stabilità del sistema sotto carico, costruendo un protocollo di test progettato per isolare il contributo specifico dell'architettura distribuita rispetto a un approccio monolitico. Le variabili non pertinenti all'oggetto di indagine — come la latenza di rete verso ElevenLabs o il tempo di riproduzione audio in Unreal Engine — sono state tenute fuori dall'analisi, poiché non risentono delle ottimizzazioni introdotte dalla logica di sharding.
+
+\subsection{Dataset e Popolamento del Grafo}
+
+Per i test è stata utilizzata una Knowledge Base tecnica composta da manuali operativi in formato PDF riguardanti il dominio dell'epilessia. La scelta di un dominio medico specialistico non è casuale: le basi di conoscenza in ambito clinico presentano caratteristiche strutturali che stressano in modo particolarmente efficace il sistema, tra cui un'alta densità di relazioni inter-documento, una terminologia fortemente specializzata che sfida i modelli di embedding, e una struttura gerarchica dei contenuti (classificazioni, protocolli, controindicazioni) che si presta naturalmente alla rappresentazione a grafo.
+
+I documenti sono stati processati, frammentati in paragrafi e inseriti nel database Neo4j remoto seguendo lo schema descritto nel Capitolo~2. Durante la fase di indicizzazione, per ogni nodo \texttt{PARAGRAPH} sono stati generati automaticamente tramite l'LLM i nodi \texttt{QUESTION} e \texttt{STATEMENT} associati, e per ognuno di essi è stato calcolato il vettore di embedding tramite \textbf{Embedding-Gemma} \cite{embedding_gemma_2025} in esecuzione locale via Ollama \cite{ollama}.
+
+Il grafo finale conta circa \textbf{20.000 nodi interconnessi}, tra cui circa \textbf{600 nodi di tipo \texttt{PARAGRAPH}}. Questa dimensione, pur essendo contenuta rispetto a una base di conoscenza clinica reale — che in un ospedale potrebbe facilmente raggiungere le migliaia di documenti e decine di migliaia di paragrafi — è sufficiente per rilevare differenze di prestazione statisticamente significative tra le due architetture a confronto. È ragionevole attendersi che i benefici dello sharding siano ancora più pronunciati al crescere della dimensione del dataset, poiché la latenza di accesso al Remote scala in modo non lineare con la dimensione dell'indice vettoriale e con la complessità del piano di esecuzione delle query.
+
+\subsection{Configurazione Hardware}
+
+I test sono stati condotti in un ambiente controllato per isolare il più possibile l'impatto dell'architettura software da quello dell'hardware sottostante. La configurazione utilizzata è la seguente:
+
+\begin{itemize}
+    \item \textbf{Processore}: AMD RYZEN 5 7600, 3.8 GHz (6 core, 12 thread).
+    \item \textbf{Memoria RAM}: 32 GB DDR5 @6400 MHz.
+    \item \textbf{GPU}: NVIDIA GeForce RTX 4070 SUPER, 12 GB VRAM.
+\end{itemize}
+
+La GPU ha rivestito un ruolo determinante nell'abbattere la componente di latenza legata all'inferenza locale. I pesi di \textbf{Llama 3.2} (3B parametri) e del modello \textbf{Embedding-Gemma} sono stati caricati interamente sulla VRAM tramite Ollama \cite{ollama}, eliminando la necessità di scaricare i layer in RAM o su disco durante l'inferenza. In assenza di GPU dedicata, entrambi i modelli avrebbero dovuto operare sulla CPU, con tempi di inferenza stimati da 5 a 10 volte superiori, tali da rendere il sistema inadeguato per un'interazione conversazionale in tempo reale. L'hardware consumer impiegato dimostra tuttavia che l'architettura proposta è realizzabile anche al di fuori di ambienti server dedicati, abbassando significativamente la barriera d'ingresso per la sua adozione.
+
+\section{Metriche di Valutazione}
+
+Per quantificare le prestazioni del sistema è stata adottata come metrica principale la latenza \textit{end-to-end}, definita operativamente come il tempo totale (\textit{Round Trip Time}, RTT) intercorrente tra il momento in cui la trascrizione testuale della domanda è disponibile per il backend Python e il momento in cui il backend restituisce la risposta testuale generata dall'LLM. Questa definizione esclude deliberatamente il tempo di trascrizione ASR e il tempo di sintesi TTS dalle misurazioni comparative, poiché entrambi i contributi sono indipendenti dalla scelta dell'architettura di recupero e avrebbero introdotto varianza non pertinente all'analisi.
+
+La latenza end-to-end così definita è composta dai seguenti contributi in serie, misurabili e controllabili:
+
+\begin{enumerate}
+    \item \textbf{Tempo di embedding della query}: il tempo impiegato da \textbf{Embedding-Gemma} per proiettare il testo della domanda nel medesimo spazio vettoriale in cui sono stati indicizzati i contenuti della Knowledge Base.
+    \item \textbf{Tempo di recupero e sincronizzazione} tra \textbf{Remote} e \textbf{Shard}: il contributo maggiormente influenzato dalla scelta architetturale e quindi il fulcro di questa analisi. Include la ricerca vettoriale, la navigazione del grafo per l'espansione contestuale, la logica di upsert sullo Shard locale e l'eventuale applicazione della politica di eviction LFU.
+    \item \textbf{Tempo di inferenza dell'LLM}: il tempo impiegato da \textbf{Llama 3.2} per generare la risposta testuale a partire dal prompt arricchito con il contesto recuperato dallo Shard.
+\end{enumerate}
+
+L'obiettivo dichiarato del sistema è mantenere la latenza RTT complessiva — comprensiva di tutti e tre i contributi — al di sotto dei \textbf{2 secondi}, soglia identificata in letteratura come limite superiore per preservare la naturalezza di un dialogo con un agente virtuale \cite{latency_eca}. Nel contesto di questo sistema, tale soglia è particolarmente stringente perché la latenza RTT si somma ai tempi di trascrizione ASR e di sintesi TTS, che introducono ulteriori ritardi fissi e non ottimizzabili tramite la logica di sharding.
+
+Non è stata presa in considerazione la qualità semantica delle risposte come metrica di valutazione in questa fase. Per costruzione, il contenuto del contesto fornito all'LLM è identico nei due sistemi a confronto — monolitico e distribuito — per ogni domanda in cui lo Shard contiene già i dati necessari. La differenza tra le due architetture riguarda esclusivamente il tempo necessario a recuperare quel contesto, e non la sua qualità.
+
+\section{Analisi Comparativa: Monolitico vs. Distribuito}
+
+L'esperimento principale consiste nel confrontare il comportamento del sistema \textbf{Monolitico} — che interroga esclusivamente l'istanza cloud Neo4j Aura per ogni query — con quello del sistema \textbf{Distribuito} — che sfrutta la logica di sharding locale descritta nel Capitolo~3. Le due configurazioni sono identiche in ogni altro aspetto: stesso modello LLM, stesso modello di embedding, stesso schema del grafo, stesso dataset.
+
+\subsection{Protocollo di Test e Scelta delle Query}
+
+Per la valutazione sono state formulate cinque query progressive, selezionate in modo da coprire scenari rappresentativi del ciclo di vita della cache durante una sessione conversazionale reale. Le query seguono una progressione semantica che rispecchia il modo in cui un utente potrebbe esplorare un argomento medico in modo naturale, partendo da un aspetto specifico e allargando gradualmente il campo della discussione:
+
+\begin{enumerate}
+    \item \textit{"In quale condizione potrebbero essere associate le irregolarità mestruali all'epilessia?"}\\
+          Questa è la prima interrogazione della sessione, eseguita quando lo Shard è completamente vuoto. Rappresenta il caso di \textbf{Cold Start}: il sistema non può trovare alcun dato in locale e deve necessariamente accedere al Remote per recuperare il contesto pertinente, sincronizzandolo nello Shard. Il costo di questo accesso remoto è il prezzo che il sistema paga per popolare la cache, ed è atteso che questa domanda mostri un overhead rispetto alla configurazione monolitica.
+
+    \item \textit{"Gli effetti dei farmaci antiepilettici sugli ormoni riproduttivi possono essere diretti o indiretti?"}\\
+          Questa domanda è semanticamente correlata alla prima: entrambe riguardano l'interazione tra epilessia e sistema endocrino femminile. È ragionevole attendersi che i paragrafi già sincronizzati nella risposta alla Domanda~1 siano pertinenti anche per questa, generando così i primi \textbf{cache hit} e riducendo la necessità di nuovi accessi al Remote.
+
+    \item \textit{"Ci sono fattori psicologici associati all'epilessia che possono influire sulla decisione di diventare genitori?"}\\
+          Questa domanda introduce una dimensione nuova — quella psicologica e riproduttiva — pur mantenendo la coerenza tematica con le precedenti. La necessità di recuperare nodi non ancora presenti nello Shard rappresenta un caso di \textbf{espansione del contesto}: il sistema deve integrare nuovi dati dal Remote senza perdere quelli già acquisiti, testando la coesistenza di dati "vecchi" e "nuovi" nella cache locale.
+
+    \item \textit{"Come gestisco le convulsioni dei neonati?"}\\
+          Con questa domanda si introduce un argomento parzialmente nuovo (la gestione acuta delle crisi in età neonatale), che richiede verosimilmente l'accesso a nodi non ancora presenti nello Shard. Il test verifica la capacità del sistema di rispondere efficacemente anche quando il valore predittivo della cache è ridotto, e la latenza attesa si avvicina a quella del sistema monolitico.
+
+    \item \textit{"Cos'è l'epilessia?"}\\
+          Questa è una \textbf{query generica ad alto richiamo}: la domanda è formulata in modo ampio e il sistema deve recuperare numerosi nodi per costruire una risposta esaustiva. Poiché le sessioni precedenti hanno già popolato lo Shard con una varietà di paragrafi rilevanti, è probabile che una frazione significativa di essi sia già in cache, producendo un risparmio di latenza misurabile.
+\end{enumerate}
+
+\subsection{Risultati e Analisi per Domanda}
+
+I tempi di risposta misurati nelle due configurazioni sono riportati nella Tabella~\ref{tab:performance_results}.
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{|l|c|c|c|}
+        \hline
+        \textbf{Domanda di test} & \textbf{Senza Sharding (ms)} & \textbf{Con Sharding (ms)} & \textbf{Delta (\%)} \\ \hline
+        Domanda 1 (Cold Start)   & 187                          & 216                        & +13.4\%             \\ \hline
+        Domanda 2 (Correlata)    & 207                          & 174                        & -15.9\%             \\ \hline
+        Domanda 3 (Espansione)   & 321                          & 217                        & -32.4\%             \\ \hline
+        Domanda 4 (Nuovo arg.)   & 205                          & 177                        & -13.7\%             \\ \hline
+        Domanda 5 (Generica)     & 240                          & 191                        & -20.4\%             \\ \hline
+    \end{tabular}
+    \caption{Confronto dei tempi di recupero tra sistema monolitico e sistema distribuito con sharding locale. I valori misurano la latenza del solo componente di recupero e sincronizzazione, escludendo embedding, inferenza LLM e TTS.}
+    \label{tab:performance_results}
+\end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\textwidth]{_figures/latency_chart.png}
+    \caption{Confronto della latenza di recupero tra accesso remoto e accesso tramite Shard locale.}
+    \label{fig:latency_chart}
+\end{figure}
+
+L'analisi della Tabella~\ref{tab:performance_results} e del Grafico~\ref{fig:latency_chart} evidenzia con chiarezza il comportamento atteso dell'architettura distribuita e ne conferma l'efficacia a partire dalla seconda interrogazione della sessione.
+
+\paragraph{Domanda 1 — Cold Start (+13.4\%).}
+Il risultato della prima domanda è l'unico in controtendenza rispetto all'obiettivo di riduzione della latenza, e rappresenta il costo necessario all'inizializzazione della cache. Con lo Shard vuoto, il sistema distribuito deve eseguire le stesse operazioni del monolitico — ricerca vettoriale sul Remote e navigazione del grafo — con l'aggiunta del lavoro di scrittura sullo Shard locale: la logica di upsert, l'inizializzazione dei metadati \texttt{hit\_count} e \texttt{last\_accessed}, e la creazione delle relazioni \texttt{HAS\_PARAGRAPH} tra i nodi \texttt{DOCUMENT} e \texttt{PARAGRAPH} nello Shard. L'overhead di 29 ms (+13.4\%) è il prezzo pagato per questo investimento iniziale, che verrà recuperato già alla query successiva.
+
+\paragraph{Domanda 2 — Cache Hit (-15.9\%).}
+La seconda domanda, semanticamente correlata alla prima, beneficia già parzialmente dello Shard popolato. I paragrafi relativi all'interazione tra epilessia e sistema endocrino, sincronizzati durante la risposta alla Domanda~1, risultano pertinenti anche per questa query e vengono recuperati localmente senza accesso al Remote. Il risparmio di 33 ms (-15.9\%) compensa interamente l'overhead del Cold Start, rendendo il bilancio cumulato delle prime due query già favorevole all'architettura distribuita.
+
+\paragraph{Domanda 3 — Espansione del Contesto (-32.4\%).}
+Questa è la domanda che mostra il beneficio più marcato dell'intera sessione di test, con una riduzione di 104 ms (-32.4\%). Il risultato si spiega considerando il meccanismo di context windowing descritto nel Capitolo~2: la domanda sulla psicologia e la genitorialità recupera nodi adiacenti (±2 posizioni) a quelli già in cache, e queste posizioni intermedie erano state sincronizzate durante le query precedenti come parte della finestra contestuale. In pratica, lo Shard contiene già non solo i paragrafi direttamente pertinenti alle domande precedenti, ma anche i loro vicini strutturali, aumentando la probabilità di cache hit per query che esplorano argomenti contigui nel documento originale. Il dato conferma che la strategia di context windowing ha un effetto positivo non solo sulla qualità della risposta, ma anche sulle prestazioni a lungo termine della cache.
+
+\paragraph{Domanda 4 — Nuovo Argomento (-13.7\%).}
+L'introduzione di un argomento parzialmente nuovo (la gestione delle crisi neonatali) riduce il vantaggio dello Shard, poiché una quota dei nodi necessari non è ancora presente in cache. Il sistema deve quindi ricorrere al Remote per una parte del contesto, avvicinando le proprie prestazioni a quelle del monolitico. Il risparmio residuo di 28 ms (-13.7\%) è attribuibile ai nodi che erano già stati sincronizzati nelle query precedenti e che risultano comunque pertinenti anche per questo argomento, dimostrando che la cache mantiene valore anche quando si transita verso nuovi temi.
+
+\paragraph{Domanda 5 — Query Generica ad Alto Richiamo (-20.4\%).}
+La quinta domanda, formulata in modo molto generico, potenzialmente necessita di un numero elevato di nodi per costruire una risposta esaustiva. Nonostante questo, il risparmio di 49 ms (-20.4\%) suggerisce che una frazione significativa dei paragrafi pertinenti alla definizione dell'epilessia era già stata acquisita nel corso delle query precedenti — è ragionevole, infatti, che documenti che trattano di farmaci antiepilettici, fattori psicologici dell'epilessia e crisi neonatali contengano anche sezioni descrittive della patologia di base. Questo risultato evidenzia un effetto collaterale positivo della strategia di caching: una sessione conversazionale ben progettata tende a costruire progressivamente uno Shard che copre in modo sempre più ampio il dominio in discussione.
+
+\subsection{Considerazioni sul Bilanciamento del Cold Start}
+
+Un aspetto rilevante dei risultati è la velocità con cui il costo del Cold Start viene ammortizzato. Il vantaggio cumulativo delle quattro query successive alla prima ammonta a $33 + 104 + 28 + 49 = 214$ ms, mentre il costo iniziale è stato di soli 29 ms. Il bilancio netto dell'intera sessione di cinque domande è quindi un risparmio cumulativo di 185 ms, già con un dataset di dimensioni modeste e sole cinque domande. In sessioni più lunghe e con basi di conoscenza più estese — dove la latenza di accesso al Remote cresce a causa della maggiore dimensione dell'indice vettoriale — il vantaggio cumulativo è destinato ad aumentare ulteriormente.
+
+Vale la pena osservare, inoltre, che il costo del Cold Start potrebbe essere ridotto con strategie di pre-warming dello Shard: all'avvio di una sessione, il sistema potrebbe eseguire proattivamente una serie di query predefinite sui topic più frequentemente richiesti dagli utenti, pre-popolando la cache prima che l'utente inizi a interagire. Questa evoluzione è discussa nel capitolo delle Conclusioni.
+
+\section{Efficacia della logica di Eviction LFU}
+
+Un punto critico per la sostenibilità dell'architettura distribuita è la stabilità dello Shard locale nel corso di sessioni prolungate. Senza un meccanismo di controllo della dimensione della cache, lo Shard crescerebbe indefinitamente fino a saturare la memoria disponibile o, prima ancora, fino a degradare le proprie prestazioni a causa dell'aumento del costo di pianificazione ed esecuzione delle query su un grafo sempre più grande.
+
+Per verificare la robustezza della politica di gestione della memoria, il comportamento dello Shard locale è stato monitorato durante una sessione intensiva di \textbf{50 domande consecutive}, coprendo l'intero dominio della Knowledge Base relativa all'epilessia.
+
+\subsection{Occupazione di Memoria e Stabilità}
+
+Il comportamento dell'occupazione dello Shard nel corso delle 50 domande segue tre fasi distinte, chiaramente identificabili durante il monitoraggio.
+
+Nella \textbf{fase di crescita} (all'inizio della sessione), ogni nuova domanda aggiunge nodi allo Shard che non erano ancora presenti: il numero di nodi \texttt{PARAGRAPH} cresce rapidamente dalle prime query, riflettendo la progressiva copertura del dominio da parte della cache.
+
+Nella \textbf{fase di saturazione}, il numero di nodi si avvicina alla soglia di 30: le query continuano ad aggiungere nuovi nodi, ma l'algoritmo di eviction rimuove contestualmente i nodi meno rilevanti, mantenendo il totale costantemente a ridosso del limite. Questo comportamento è la conferma operativa che la logica implementata nella macro-query Cypher — descritta nel Listing~3.3 — funziona correttamente e in modo sincrono con le operazioni di scrittura.
+
+Nella \textbf{fase di regime stazionario}, lo Shard si stabilizza: i nodi più frequentemente acceduti rimangono in cache con \texttt{hit\_count} crescente, mentre i nodi meno rilevanti vengono periodicamente rimpiazzati da nuovi candidati. Il sistema raggiunge così un equilibrio dinamico in cui la composizione dello Shard riflette fedelmente la distribuzione degli argomenti trattati nella sessione corrente.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\textwidth]{_figures/sharding_saturation.png}
+    \caption{Andamento del numero di nodi nello Shard locale durante una sessione intensiva di 50 domande. Si distinguono chiaramente la fase di crescita iniziale, la saturazione alla soglia di 30 nodi e il regime stazionario mantenuto dalla politica LFU.}
+    \label{fig:saturation}
+\end{figure}
+
+\paragraph{Correttezza della politica LFU.}
+La politica \textbf{Least Frequently Used (LFU)}, basata sui parametri \texttt{hit\_count} e \texttt{last\_accessed}, si è dimostrata adeguata per il profilo d'uso tipico di una sessione medica. A differenza di una politica LRU (\textit{Least Recently Used}), che rimuoverebbe i nodi non acceduti nell'ultima query indipendentemente dalla loro frequenza storica, la LFU preserva in cache i nodi che sono stati consultati ripetutamente nel corso della sessione, anche se non sono stati richiesti nell'ultima interazione. Questo è particolarmente vantaggioso in conversazioni dove l'utente ritorna periodicamente sullo stesso argomento per porre domande di approfondimento: i nodi fondamentali del dominio — come quelli che descrivono la patologia di base — rimangono in cache con alta priorità, anche quando vengono temporaneamente messe da parte per esplorare un tema correlato.
+
+\paragraph{Assenza di cache thrashing.}
+Un rischio nei sistemi di caching con soglia rigida è il fenomeno del \textit{cache thrashing}: se il sistema deve continuamente rimuovere e reinserire gli stessi nodi perché la soglia è troppo bassa rispetto alla dimensione del contesto necessario, le prestazioni possono degradare significativamente. Nel corso della sessione di 50 domande, questo fenomeno non è stato osservato: la soglia di 30 nodi si è dimostrata sufficiente a mantenere in cache il contesto rilevante per le query più comuni, e la composizione dello Shard non ha mostrato oscillazioni anomale. La scelta di 30 come limite è quindi validata empiricamente per il dataset e il dominio di test.
+
+\section{Analisi della Query Plan Cache}
+
+Oltre all'impatto dello sharding sulla latenza di recupero, un secondo contributo all'efficienza complessiva del sistema proviene dall'uso sistematico di \textbf{query parametrizzate} \cite{neo4j_benchmarking}. Questa ottimizzazione, descritta nella Sezione~1.4, agisce in modo ortogonale rispetto allo sharding e ne amplifica i benefici.
+
+Il meccanismo alla base è la \textit{Execution Plan Cache} di Neo4j: la prima volta che una query parametrizzata viene eseguita, il motore del database analizza la struttura sintattica della query, calcola il piano di esecuzione ottimale e lo memorizza in cache associandolo alla struttura della query. Nelle esecuzioni successive, se la struttura della query è identica e cambiano solo i valori dei parametri (come il vettore di embedding \texttt{\$embedding} o la soglia di similarità \texttt{\$threshold}), Neo4j recupera il piano già compilato dalla cache e lo esegue direttamente, saltando completamente la fase di pianificazione.
+
+Il beneficio di questa ottimizzazione è particolarmente marcato nel contesto di questo sistema per due ragioni. In primo luogo, la macro-query di sincronizzazione descritta nel Capitolo~3 è strutturalmente complessa — include ricerche vettoriali, navigazione del grafo, logica condizionale tramite CALL Subqueries e operazioni di scrittura — e il suo piano di esecuzione non è banale da calcolare. La ricompilazione di un piano di questa complessità ad ogni query introdurrebbe un overhead fisso non trascurabile. In secondo luogo, in una sessione conversazionale la struttura della macro-query rimane identica per tutte le domande poste dall'utente: cambia solo il vettore di embedding della query corrente, che viene iniettato come parametro. La Query Plan Cache è quindi efficace dal secondo accesso in poi per l'intera durata della sessione.
+
+Monitorando i log di Neo4j durante la sessione di test, è stato possibile confermare che il piano di esecuzione della macro-query viene compilato una sola volta per sessione e riutilizzato per tutte le interrogazioni successive. Questo comportamento è coerente con quanto documentato nella letteratura tecnica di Neo4j \cite{neo4j_benchmarking} e costituisce una best practice che il sistema adotta in modo sistematico attraverso l'uso esclusivo di parametri nella costruzione di tutte le query Cypher.
+
+L'interazione tra la Query Plan Cache e la logica di sharding è sinergica: lo sharding riduce il numero di accessi al Remote e quindi la latenza di rete, mentre la Query Plan Cache riduce il tempo di pianificazione per le query eseguite sia sul Remote sia sullo Shard locale. Le due ottimizzazioni operano su componenti diverse del RTT e i loro benefici si sommano senza interferire l'uno con l'altro.
+
+\section{Interpretazione dei risultati}
+
+I dati raccolti durante la campagna sperimentale consentono di trarre alcune conclusioni generali sull'efficacia dell'architettura proposta e sui suoi limiti attuali.
+
+\paragraph{L'architettura a due livelli è una necessità tecnica.}
+Il confronto tra sistema monolitico e distribuito conferma che, anche con un dataset di dimensioni moderate (600 nodi \texttt{PARAGRAPH}), l'accesso ripetuto a un database remoto introduce una variabilità di latenza che può compromettere la fluidità dell'interazione conversazionale. Nel sistema monolitico, la latenza di recupero dipende interamente dalla latenza di rete verso il cloud, che è per sua natura non deterministicamente variabile. Il sistema distribuito sostituisce, a partire dalla seconda query, questa dipendenza con un accesso locale i cui tempi sono prevedibili e stabili \cite{kleppmann2017}. In un'applicazione di Conversational AI dove la prevedibilità della latenza è importante quanto il suo valore medio, questa proprietà rappresenta un vantaggio significativo anche al di là della riduzione percentuale osservata nei test.
+
+\paragraph{Il beneficio cresce con la complessità del dominio.}
+Le differenze di prestazione osservate sono relativamente contenute in valore assoluto — dell'ordine di alcune decine di millisecondi per query — perché il dataset di test è piccolo e le query non sono particolarmente articolate. In scenari reali con basi di conoscenza più estese, la latenza di accesso al Remote crescerebbe a causa della maggiore dimensione dell'indice vettoriale, dell'aumento del costo di navigazione del grafo per l'espansione contestuale, e dell'eventuale saturazione delle risorse di rete in presenza di più utenti concorrenti. L'architettura distribuita è progettata precisamente per isolare l'esperienza dell'utente da queste variabili, mantenendo le prestazioni locali costanti al crescere della dimensione del sistema \cite{rag_performance_2023}.
+
+\paragraph{La logica di eviction non penalizza la qualità.}
+Un possibile timore riguardo all'uso di una soglia rigida sul numero di nodi in cache è che la rimozione di nodi potesse degradare la qualità del contesto fornito all'LLM nelle query successive. I test hanno mostrato che questo fenomeno non si verifica in pratica: la politica LFU garantisce che i nodi rimossi siano quelli acceduti meno di frequente e più di recente, che sono per definizione i meno rilevanti per il filo conduttore della sessione corrente. La qualità percepita delle risposte è rimasta costante per tutta la durata della sessione di 50 domande, suggerendo che la soglia di 30 nodi è adeguata per mantenere in cache il contesto sufficiente a supportare una conversazione coerente su un singolo dominio medico.
+
+\paragraph{Limitazioni del protocollo di test.}
+È necessario riconoscere alcune limitazioni della valutazione condotta. Il protocollo di test utilizza un dataset monodomain (epilessia) e un numero limitato di query pre-selezionate, che non coprono la varietà delle interazioni possibili in un sistema di Conversational AI reale. Inoltre, i test sono stati condotti in un ambiente monouso: le misurazioni non includono scenari di concorrenza, dove più sessioni utente accedono simultaneamente al Remote o allo Shard. Infine, la qualità semantica delle risposte non è stata valutata in modo sistematico con metriche automatiche come ROUGE o BERTScore, limitando la possibilità di escludere regressioni qualitative legate alla politica di eviction. Queste limitazioni non invalidano le conclusioni sull'efficacia della latenza, ma definiscono il perimetro di validità dei risultati e indicano le direzioni prioritarie per una valutazione futura più completa.
