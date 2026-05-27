@@ -41,12 +41,12 @@ Because the project uses `biblatex` for references, you must follow a specific c
 
 ## Project Structure
 
-* `thesis.tex`: The main LaTeX file containing the document structure and chapter inclusions [cite: 1].
-* `uninathesis.cls`: The document class defining the layout, headers, and custom environments [cite: 1].
-* `uninafrontespizio.sty`: A package specifically for generating the Federico II University front page [cite: 1].
-* `_chapters/`: Directory containing the individual chapter `.tex` files [cite: 1].
-* `_bib/`: Contains the `bibliography.bib` file for references [cite: 2].
-* `logo-federico-II.pdf`: The University logo required for the frontispiece [cite: 1].
+* `thesis.tex`: The main LaTeX file containing the document structure and chapter inclusions.
+* `uninathesis.cls`: The document class defining the layout, headers, and custom environments.
+* `uninafrontespizio.sty`: A package specifically for generating the Federico II University front page.
+* `_chapters/`: Directory containing the individual chapter `.tex` files.
+* `_bib/`: Contains the `bibliography.bib` file for references.
+* `logo-federico-II.pdf`: The University logo required for the frontispiece.
 
 ---
 
