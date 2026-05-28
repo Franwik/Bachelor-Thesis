@@ -109,37 +109,10 @@ Quando l'utente termina di parlare e Whisper completa la trascrizione, Unreal En
 La separazione netta tra il payload della richiesta  e il payload della risposta mantiene l'interfaccia tra frontend e backend semplice e stabile, disaccoppiando efficacemente le due parti del sistema.
 
 % ─────────────────────────────────────────────────────────────────────────────
-% \section{Considerazioni sulla Latenza ed Esperienza Utente}
+\section{Considerazioni sulla Latenza ed Esperienza Utente}
 
-% Il principale ostacolo tecnico in un sistema distribuito come quello descritto è
-% il \textbf{Round-Trip Time (RTT)}: la somma di tutti i tempi di elaborazione
-% e di comunicazione che intercorrono tra il momento in cui l'utente termina di
-% parlare e il momento in cui l'agente inizia a rispondere. In questo sistema, il
-% RTT è composto da diversi contributi in serie: il tempo di trascrizione di Whisper,
-% il tempo di embedding della query, il tempo di ricerca vettoriale sul Remote (o
-% di lettura dallo Shard se in cache), il tempo di sincronizzazione, il tempo di
-% inferenza di Llama 3.2 e infine il tempo di ricezione dei primi chunk audio da
-% ElevenLabs.
+Il principale problema pratico in un sistema distribuito come questo è il \textbf{Round-Trip Time (RTT)}, ovvero il tempo totale che intercorre tra la fine della frase dell'utente e l'inizio della risposta dell'agente. Si tratta di un insieme di ritardi concatenati, ciascuno dei quali contribuisce all'esperienza percepita. Nella nostra pipeline rientrano, per esempio, la trascrizione con Whisper, la ricerca vettoriale sul Remote, la sincronizzazione dei componenti e l'arrivo dei primi frammenti audio da ElevenLabs. Capire e ottimizzare questi passaggi è fondamentale per rendere la conversazione più fluida e naturale per l'utente.
 
-% L'integrazione tra il database Shard locale — che riduce il tempo di recupero
-% delle informazioni — e la gestione degli stati della FSM in Unreal — che rende
-% produttivo il tempo di attesa con animazioni di riflessione — permette di mantenere
-% il \textbf{tempo di risposta totale percepito sotto i 2 secondi}, valore identificato
-% in letteratura come limite superiore per una conversazione fluida e naturale
-% \cite{latency_eca}. È importante distinguere tra latenza \textit{effettiva} e latenza
-% \textit{percepita}: lo stato \texttt{THINKING} dell'agente contribuisce a ridurre
-% la seconda anche quando la prima rimane invariata, rendendo l'attesa soggettivamente
-% più breve e meno frustrante.
+L'integrazione tra il database Shard locale e la gestione degli stati della FSM in Unreal ci ha permesso di mantenere il tempo di risposta totale percepito relativamente basso. È fondamentale distinguere tra ciò che viene comunemente chiamata latenza \textit{effettiva} e la latenza \textit{percepita}. Lo stato \texttt{THINKING} dell'agente gioca un ruolo cruciale nel ridurre la seconda, poiché fornisce un feedback visivo che comunica al paziente che il sistema sta lavorando, anche quando il tempo effettivo rimane lo stesso. Questo accorgimento trasforma un'attesa passiva in qualcosa di percettibilmente più breve e significativamente meno frustrante.
 
-% Due scelte implementative sono state particolarmente determinanti per il
-% raggiungimento di questo obiettivo. La prima è l'esecuzione locale di
-% \textit{whisper.cpp}: la trascrizione avviene in locale senza roundtrip di rete,
-% con tempi di elaborazione prevedibili e indipendenti dalla qualità della connessione
-% internet. La seconda è lo \textbf{streaming audio di ElevenLabs}: il sistema non
-% attende la generazione completa dell'audio prima di riprodurlo, ma inizia la
-% riproduzione non appena i primi chunk audio sono disponibili. Questo meccanismo
-% riduce significativamente la latenza \textit{percepita} tra la fine dell'elaborazione
-% del testo e l'inizio della risposta vocale, poiché l'utente sente le prime parole
-% dell'agente molto prima che l'intero enunciato sia stato sintetizzato. I dati
-% sperimentali relativi alla latenza end-to-end misurata sull'hardware di test sono
-% presentati e discussi nel Capitolo \ref{chap:fifth}.
+Due scelte implementative risultano cruciali per raggiungere questo obiettivo. Innanzitutto, l'esecuzione locale di \textit{whisper.cpp} permette alla trascrizione di avvenire sul dispositivo dell'utente senza necessità di comunicare con server remoti, garantendo tempi di elaborazione stabili e indipendenti dalla qualità della connessione internet. In secondo luogo, lo streaming audio di ElevenLabs consente al sistema di iniziare la riproduzione della risposta vocale non appena i primi frammenti audio diventano disponibili, senza attendere la sintesi completa. Questo approccio riduce notevolmente la latenza percepita, poiché l'utente ascolta le prime parole dell'agente ben prima che l'intera risposta sia stata generata, rendendo l'interazione più naturale e fluida.
