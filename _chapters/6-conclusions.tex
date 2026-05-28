@@ -1,7 +1,6 @@
 \newpage\pagestyle{conclusions}
 
 \unnumberedchapter{Conclusioni e Sviluppi Futuri}
-% \addcontentsline{toc}{chapter}{Conclusioni e Sviluppi Futuri}
 
 \section*{Sintesi dei risultati ottenuti}
 Il presente lavoro di tesi ha esplorato l'integrazione di database a grafo distribuiti all'interno di architetture di \textit{Conversational AI}, con l'obiettivo di superare i limiti di memoria e latenza tipici dei sistemi RAG tradizionali. Attraverso l'implementazione di una struttura a due livelli (Remote e Local Shard), è stato possibile creare un agente virtuale in Unreal Engine capace di attingere a una base di conoscenza vasta senza compromettere la fluidità dell'interazione.
@@ -18,6 +17,6 @@ Le direzioni future per l'evoluzione di questo progetto si concentrano sulla res
 
 \begin{itemize}
     \item \textbf{Integrazione con Apache Kafka}: Per risolvere il problema della coerenza del dato tra Remote e Shard, una naturale evoluzione prevede l'impiego di \textbf{Apache Kafka} \cite{apache_kafka}. Implementando un paradigma \textit{Event-Driven} \cite{shapira2021kafka}, ogni aggiornamento effettuato sulla base di conoscenza remota verrebbe pubblicato su un topic Kafka. Gli shard locali, agendo come \textit{consumer}, potrebbero aggiornare istantaneamente i propri nodi in tempo reale, garantendo che l'agente virtuale disponga sempre dell'ultima versione disponibile della documentazione.
-    
+
     \item \textbf{Orchestrazione tramite Kubernetes}: In ottica di distribuzione su larga scala, il sistema potrebbe beneficiare dell'orchestrazione tramite \textbf{Kubernetes} \cite{kubernetes}. L'intera architettura (server LangGraph, istanze Neo4j e backend Python) potrebbe essere containerizzata, permettendo una gestione dinamica delle risorse. Kubernetes consentirebbe di scalare orizzontalmente il numero di shard locali in base al numero di utenti attivi o alla distribuzione geografica, garantendo alta affidabilità e bilanciamento del carico.
 \end{itemize}
