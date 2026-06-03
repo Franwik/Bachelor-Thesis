@@ -27,7 +27,7 @@ Per superare queste criticità, è stato adottato il paradigma del \textit{Retri
 
 Per attuare il processo RAG, vengono eseguite le seguenti operazioni in sequenza:
 \begin{enumerate}
-    \item \textbf{Retrieve (Recupero)}: Quando l'utente pone una domanda il sistema esegue una ricerca all'interno della base di conoscenza esterna identificando i documenti piuù rilevanti per rispondere alla domanda. Questa fase è cruciale per l'accuratezza della risposta.
+    \item \textbf{Retrieve (Recupero)}: Quando l'utente pone una domanda il sistema esegue una ricerca all'interno della base di conoscenza esterna identificando i documenti più rilevanti per rispondere alla domanda. Questa fase è cruciale per l'accuratezza della risposta.
     \item \textbf{Augment (Arricchimento)}: Una volta recuperati i documenti utili a rispondere alla domanda, questi vengono fortini come promt aggiuntivo al modello linguistico, che in questo modo riesce ad arricchire la sua conoscenza e comprensione del dominio.
     \item \textbf{Generate (Generazione)}: Infine il modello, grazie alla conoscenza ricevuta, è in grado di generare una risposta quanto più accurata possibile. Questa risposta viene poi restituita all'untente, completando il ciclo di interazione.
 \end{enumerate}
